@@ -1,0 +1,2 @@
+import {defineConfig} from '@playwright/test';
+export default defineConfig({testDir:'./tests/browser',fullyParallel:false,workers:1,timeout:30000,use:{baseURL:'http://localhost:4319',browserName:'chromium',headless:true,viewport:{width:1440,height:1050},screenshot:'only-on-failure',trace:'retain-on-failure'},webServer:{command:'node tests/browser/server.mjs',url:'http://localhost:4319',reuseExistingServer:false,env:{IGNORE_LOCAL_ENV:'true',AI_API_KEY:'',AI_BASE_URL:'',AI_MODEL:'',PORT:'4319',DATA_DIR:`.data/e2e-${Date.now()}`}},reporter:'list'});

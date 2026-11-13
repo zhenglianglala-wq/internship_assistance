@@ -1,0 +1,28 @@
+import {memo,useMemo,useEffect,useRef,useState} from 'react';
+import {ReactFlow,Background,Controls,Handle,Position,MarkerType,type NodeProps,type Node,type Edge,type ReactFlowInstance} from '@xyflow/react';
+import {Check,Clock3,Ellipsis,Flag,MessageSquare,Send,UserRound,FileCheck2} from 'lucide-react';
+import {Logo} from './components';
+import type {Application} from './types';
+import '@xyflow/react/dist/style.css';
+const icons=[Flag,MessageSquare,Send,FileCheck2,UserRound,UserRound,Flag];
+type StateNode=Node<{label:string;sub:string;state:string;index:number;color:string;company?:Application;onSelect:()=>void}>;
+const JourneyNode=memo(function JourneyNode({data}:NodeProps<StateNode>){const Icon=icons[data.index%icons.length];return <button className={`journey-node ${data.state} ${data.color} ${data.company?'company-node':''}`} onClick={data.onSelect} aria-label={`${data.company?data.company.company+' ':''}${data.label}，${data.sub}`}><Handle type="target" position={Position.Left}/>{data.company?<Logo company={data.company}/>:<span className="node-icon"><Icon size={18}/></span>}<span className="node-copy"><strong>{data.label}</strong><small>{data.sub}</small></span>{data.state==='done'?<span className="node-status"><Check size={12}/></span>:data.state==='current'?<span className="node-status"><Clock3 size={12}/></span>:<Ellipsis size={14} className="future-dots"/>}<Handle type="source" position={Position.Right}/></button>});
+const nodeTypes={journey:JourneyNode};
+export function JourneyGraph({application,onSelect,large=false}:{application:Application;onSelect:(stage:string)=>void;large?:boolean}){
+ const container=useRef<HTMLDivElement>(null),instance=useRef<ReactFlowInstance<StateNode>|null>(null);const [compact,setCompact]=useState(false);
+ useEffect(()=>{if(!container.current)return;let frame=0;const observer=new ResizeObserver(entries=>{setCompact(entries[0].contentRect.width<600);cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>{void instance.current?.fitView({padding:.12,duration:0,minZoom:.2,maxZoom:1})})});observer.observe(container.current);return()=>{observer.disconnect();cancelAnimationFrame(frame)}},[]);
+ const {nodes,edges}=useMemo(()=>{
+   const hasTest=application.events.some(e=>e.stage==='笔试');
+   const extras=[...new Set(application.events.map(e=>e.stage))].filter(s=>!['已发现','已联系','已投递','初筛','笔试','一面','二面','Offer','未通过','已撤回'].includes(s));
+   const flow=['已联系','已投递','初筛',...(hasTest?['笔试']:[]),'一面','二面',...extras,'Offer'];
+   const current=flow.indexOf(application.stage);const visited=new Set(application.events.map(e=>e.stage));
+   const nodes:StateNode[]=[{id:'company',type:'journey',position:compact?{x:85,y:0}:{x:5,y:45+(Math.ceil(flow.length/3)-1)*60},data:{label:application.company,sub:application.role,state:'company',index:0,color:application.color,company:application,onSelect:()=>onSelect(application.stage)}}];
+   flow.forEach((label,i)=>{const state=label===application.stage?'current':visited.has(label)?'done':'future';const date=application.events.filter(e=>e.stage===label).at(-1)?.date;nodes.push({id:label,type:'journey',position:compact?{x:i%2*200,y:120+Math.floor(i/2)*120}:{x:230+i%3*200,y:25+Math.floor(i/3)*120},data:{label,sub:state==='current'?'当前阶段':date?new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit'}).format(new Date(date)):label==='Offer'?'期待好消息':'等待开启',state,index:i+1,color:label==='Offer'?'orange':application.color,onSelect:()=>onSelect(label)}})});
+   if(!flow.includes(application.stage)&&application.stage!=='已发现')nodes.push({id:application.stage,type:'journey',position:compact?{x:200,y:120+Math.ceil(flow.length/2)*120}:{x:630,y:25+Math.ceil(flow.length/3)*120},data:{label:application.stage,sub:'当前阶段',state:'current',index:0,color:'rose',onSelect:()=>onSelect(application.stage)}});
+   const sequence=['company',...flow];const edges:Edge[]=sequence.slice(1).map((id,i)=>({id:`edge-${i}`,source:sequence[i],target:id,type:'smoothstep',style:{stroke:i<=current?'#ac9cdb':'#dedce8',strokeWidth:1.7,strokeDasharray:i>current?'5 5':undefined},markerEnd:{type:MarkerType.ArrowClosed,color:i<=current?'#ac9cdb':'#dedce8',width:12,height:12}}));
+   if(!flow.includes(application.stage)&&application.stage!=='已发现')edges.push({id:'terminal',source:application.events.filter(e=>!['未通过','已撤回'].includes(e.stage)).map(e=>e.stage).filter(s=>flow.includes(s)).at(-1)||'company',target:application.stage,type:'smoothstep',style:{stroke:'#d7a3b2',strokeWidth:1.7,strokeDasharray:undefined},markerEnd:{type:MarkerType.ArrowClosed,color:'#d7a3b2',width:12,height:12}});
+   return {nodes,edges};
+ },[application,onSelect,compact]);
+ useEffect(()=>{const frame=requestAnimationFrame(()=>{void instance.current?.fitView({padding:.12,duration:0,minZoom:.2,maxZoom:1})});return()=>cancelAnimationFrame(frame)},[compact,nodes]);
+ return <div ref={container} style={compact?{height:Math.max(510,120+Math.ceil((nodes.length-1)/2)*110)}:nodes.length>7?{height:70+Math.ceil((nodes.length-1)/3)*110,minHeight:70+Math.ceil((nodes.length-1)/3)*110}:undefined} className={`journey-canvas ${large?'large':''} ${compact?'compact':''}`} role="region" aria-label={`${application.company}申请流程图`}><ReactFlow key={application.id} onInit={flow=>{instance.current=flow}} nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView fitViewOptions={{padding:.12,minZoom:.2,maxZoom:1}} minZoom={.2} maxZoom={1.5} nodesDraggable={false} nodesConnectable={false} elementsSelectable={true} nodesFocusable={false} proOptions={{hideAttribution:true}} preventScrolling={false}><Background gap={20} size={1} color="#dcd9e8"/><Controls showInteractive={false}/></ReactFlow></div>
+}

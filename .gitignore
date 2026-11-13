@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+dist/
+.env
+.env.*
+!.env.example
+.data/
+artifacts/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+*.pem
+*.key
+*.sqlite*

@@ -1,0 +1,5 @@
+import {existsSync,readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+export const resumeFonts=[{id:'noto-sans',name:'思源黑体 / Noto Sans SC',file:'NotoSansSC-Regular.otf',family:'Resume Sans',format:'opentype'},{id:'noto-serif',name:'思源宋体 / Noto Serif SC',file:'NotoSerifSC-Regular.otf',family:'Resume Serif',format:'opentype'},{id:'wenkai',name:'霞鹜文楷',file:'LXGWWenKai-Regular.ttf',family:'Resume WenKai',format:'truetype'}];
+export function resumeFont(id='noto-sans'){const entry=resumeFonts.find(f=>f.id===id);if(!entry)throw Object.assign(Error('请选择已支持的简历字体'),{status:400});const path=fileURLToPath(new URL(`../public/fonts/${entry.file}`,import.meta.url));if(!existsSync(path))throw Object.assign(Error('项目字体文件缺失，请重新下载项目内的 public/fonts 字体资源'),{status:503});return {entry,path}}
+export function embeddedFontCss(id){const {entry,path}=resumeFont(id);return `@font-face{font-family:'Resume Export';src:url(data:font/${entry.format==='opentype'?'otf':'ttf'};base64,${readFileSync(path).toString('base64')}) format('${entry.format}');font-weight:100 900}body,h1,h2,h3{font-family:'Resume Export',sans-serif!important}`}
