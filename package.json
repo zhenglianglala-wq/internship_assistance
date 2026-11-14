@@ -24,6 +24,7 @@
     "imapflow": "^1.0.195",
     "ipaddr.js": "^2.5.0",
     "jsonresume-theme-even": "0.27.0",
+    "langfuse": "^3.39.2",
     "lucide-react": "^0.468.0",
     "mailparser": "^3.7.0",
     "mammoth": "^1.13.0",

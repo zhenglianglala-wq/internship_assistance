@@ -82,3 +82,11 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - 验证环境：Linux 沙箱 Node 22.23.4，隔离 DATA_DIR 与 /tmp 构建，未触碰个人 `.data` 与真实 `.env`。构建通过且产物哈希与现有 dist 一致（前端未改动，未回传 dist）；`node --test tests/*.test.mjs` 89/89 通过（81 旧 + 8 新）；`scripts/check-secrets.mjs` 通过；Playwright Chromium 24 条浏览器流程 23 条通过、1 条未通过——Vision OCR 截图用例依赖 `/usr/bin/swiftc`（macOS Vision），沙箱无 swiftc，属环境限制，该用例此前在 macOS 实机通过且与本次改动无关。沙箱运行浏览器需临时 `LD_LIBRARY_PATH` 提供 libXdamage.so.1，Chromium 安装于沙箱目录，未污染项目。
 - 隔离服务 curl 实测（127.0.0.1:4318，临时 DATA_DIR，测后清理）：`/api/does-not-exist` → 404 JSON `{"error":"接口不存在"}` 且 `Cache-Control: no-store`；`/assets/nope-9a1b2c.js` → 404 JSON `{"error":"资源不存在"}`，Content-Type 非 text/html；`/` → 200 text/html，`Cache-Control: no-cache`，含完整 CSP 与 `X-Frame-Options: DENY`；`/assets/index-C5c_g_Ev.js` → 200，`Cache-Control: public, max-age=31536000, immutable`；`X-Workspace: boss` → 400 `{"error":"工作空间标识无效，仅支持 demo 或 personal"}`。
 - 未覆盖：本沙箱无法访问用户本机 4318 运行实例，重启后的当面核对留待用户执行（服务器端改动需重启生效，dist 无需重建）；真实邮箱 IMAP 同步与 BOSS 真实登录等真实上游流程本次未触碰。未推送 GitHub，未发送邮件、消息或投递。
+
+## 2026-11-14 Langfuse 模型观测接入
+
+- server/ai.mjs 可选接入 Langfuse（官方 langfuse 3.39.2 SDK，纯 JS，lockfileVersion 9.0 不变）。配置 LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY（可选 LANGFUSE_HOST，默认云版 EU）后，每次 generateText 上报一条 trace（name 为 resume-improve / mobile-structure / model-test，随调用点区分）与一条 generation（模型名、prompt/响应、token 用量、起止时间、apiHost 元数据），flushAt=1 即时上报。未配置密钥时完全不创建客户端、零网络请求；上报构造或发送异常被捕获，绝不影响模型结果与接口响应。三个调用点（简历定向建议、手机分享结构化、模型连接测试）各自带语义化名称。
+- 用量来源：百炼/OpenAI 兼容响应中的 usage（prompt_tokens/completion_tokens/total_tokens），此前被丢弃，现记录进 generation.usage；total 缺失时以输入+输出兜底。
+- 新增 tests/observability.test.mjs 4 项：未配置时零行为且不建客户端；注入假客户端断言 trace 元数据与用量数值；上报抛错不影响模型返回；真实 SDK 指向本地捕获 HTTP 服务完成端到端上报（断言 Basic 认证头、batch 含 trace-create/generation-create、模型名与用量）。后端合计 93/93（89+4）通过；密钥扫描通过；前端未改动，无需重建 dist。
+- 选择说明：Langfuse v4 已将 /api/public/ingestion 列为遗留端点；官方 v3 SDK 为其持续兼容的客户端路径，且接入集中在 ai.mjs 单处，日后可低成本迁移到 @langfuse/otel。未自写上报协议，避免随版本漂移。
+- 未验证与限制：未用真实 Langfuse 云账号端到端验证（需用户注册并配置 keys 重启后，在控制台核对 resume-improve 等三条 trace）；模型调用失败（HTTP 非 200/网络异常）不产生 trace；成本换算依赖 Langfuse 内置模型单价表，自定义模型名可能显示为 0 成本；简历正文与岗位描述会随 prompt 上传至 Langfuse 云端，为用户知情选择的云版方案；沙箱安装依赖时曾临时改写 node_modules/.modules.yaml 的 store 路径记录并已还原为 Mac 原值。
