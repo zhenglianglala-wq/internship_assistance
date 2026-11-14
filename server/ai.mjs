@@ -9,7 +9,7 @@ function langfuseClient(){
   if(observability.client!==undefined)return observability.client;
   observability.client=null;
   const {LANGFUSE_PUBLIC_KEY,LANGFUSE_SECRET_KEY}=process.env;
-  if(LANGFUSE_PUBLIC_KEY&&LANGFUSE_SECRET_KEY){try{observability.client=new Langfuse({publicKey:LANGFUSE_PUBLIC_KEY,secretKey:LANGFUSE_SECRET_KEY,baseUrl:(process.env.LANGFUSE_HOST||'https://cloud.langfuse.com').replace(/\/+$/,''),flushAt:1,flushInterval:200,requestTimeout:8000});}catch{observability.client=null;}}
+  if(LANGFUSE_PUBLIC_KEY&&LANGFUSE_SECRET_KEY){try{observability.client=new Langfuse({publicKey:LANGFUSE_PUBLIC_KEY,secretKey:LANGFUSE_SECRET_KEY,baseUrl:(process.env.LANGFUSE_HOST||process.env.LANGFUSE_BASE_URL||'https://cloud.langfuse.com').replace(/\/+$/,''),flushAt:1,flushInterval:200,requestTimeout:8000});}catch{observability.client=null;}}
   return observability.client;
 }
 export async function flushObservability(){const client=langfuseClient();if(client)await client.flushAsync().catch(()=>{});}

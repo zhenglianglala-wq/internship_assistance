@@ -42,3 +42,5 @@ test('真实 SDK 走本地捕获服务完成端到端上报',async()=>{
     assert.equal(gen.body.usage.input,11);assert.equal(gen.body.usage.total,18);assert.equal(gen.body.usage.unit,'TOKENS');
   }finally{observability.client=null;delete process.env.LANGFUSE_PUBLIC_KEY;delete process.env.LANGFUSE_SECRET_KEY;delete process.env.LANGFUSE_HOST;await new Promise(r=>server.close(r));}
 });
+
+test('LANGFUSE_BASE_URL 作为兼容键名同样生效',async()=>{process.env.LANGFUSE_PUBLIC_KEY='pk-local-test';process.env.LANGFUSE_SECRET_KEY='sk-local-test';process.env.LANGFUSE_BASE_URL='http://127.0.0.1:59999';observability.client=undefined;try{aiServices.fetch=modelOk({prompt_tokens:1,completion_tokens:1,total_tokens:2});const result=await generateText([{role:'user',content:'hi'}]);assert.equal(result,'连接成功');assert.ok(observability.client,'应按 LANGFUSE_BASE_URL 创建客户端');await flushObservability();}finally{observability.client=null;delete process.env.LANGFUSE_PUBLIC_KEY;delete process.env.LANGFUSE_SECRET_KEY;delete process.env.LANGFUSE_BASE_URL;}});
