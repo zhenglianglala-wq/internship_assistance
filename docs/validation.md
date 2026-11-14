@@ -101,3 +101,12 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - 浏览器流程（沙箱 Chromium，按历史分组方式）：app 5、resumes 3、builder 2、discovery 4、safari 3、chrome 4、mobile 2 通过，合计 23 条；Vision OCR 用例仍因沙箱无 swiftc 失败（环境限制，同前记录）。
 - 发现一个既有测试顺序依赖（非本次引入）：若 chrome.spec 先于 discovery.spec 连跑，chrome 用例采集留下的岗位池使"采集岗位"计数徽标出现，`getByRole('button',{name:/采集岗位/})` 同时匹配页内 tab 与"查看全部已采集岗位"按钮，触发 Playwright strict mode violation，discovery 3 条与 safari 1 条失败；单独跑或按无 chrome 前置分组均通过。失败选择器位于 Discovery.tsx（本次未改动），记忆功能不产生岗位数据。建议后续将选择器改为精确匹配或用例间清理岗位池。
 - 隔离服务 curl 实测（临时 DATA_DIR，测后清理）：POST /api/memories → 201 confirmed；GET 列表与 bootstrap 均含记忆；PATCH retired 与 DELETE → 200；demo POST → 400 中文提示。真实模型调用下的注入效果未验证（沙箱无真实百炼 key），已由假模型断言 prompt 内容的单测覆盖。
+
+## 2026-11-14 记忆功能第二期（AI 提炼 + 追问会话）
+
+- 提炼：`POST /api/memories/extract`（demo 拒绝）读取最近 12 条申请与 12 条消息的脱敏摘要（描述/正文各截断），经 `generateText`（trace 名 `memory-extract`）产出最多 8 条候选，逐条 zod 校验、按内容去重、按类型容量跳过，全部以 `pending` 入库，返回 `{created,skipped,memories}`；未配置模型返回 400 中文提示。设置页记忆卡片新增"从最近数据提炼"按钮，提炼结果进入待确认区，逐条"记住/丢弃"。
+- 追问会话：`generateText` 成功后创建内存会话（`improveSessions`，30 分钟滑动 TTL，容量 40 上限，重启即失），`resume-improve` 响应新增 `sessionId`；`POST /api/resumes/:id/improve/ask`（demo 拒绝）基于会话历史继续回答，每轮追加并刷新 TTL，会话失效返回 409 中文；超过 6 轮把早期问答机械折叠为摘要（MemoBrain 的 FOLD 思想：确定性、零模型调用），摘要不再重复进入历史。Langfuse trace 名 `resume-ask`。简历建议卡片新增追问输入框与问答记录（切换岗位或收起建议即作废会话）。
+- 测试：`tests/memory.test.mjs` 扩至 10 项（新增提炼去重/容量跳过/demo 拒绝、追问携带历史与 TTL 续期、过期会话 409 且不调模型、超轮次折叠摘要且不重复注入）。后端合计 104/104（100+4）通过；tsc 通过；密钥扫描通过。
+- 构建：前端改动，沙箱重建并同步 dist（`index-CyDW39qc.js`/`index-DUV6A7sJ.css`）；浏览器流程 resumes+app 共 8 条通过。
+- 修复既有测试顺序依赖：`tests/browser/{discovery,mobile,safari}.spec.ts` 中 6 处 `getByRole('button',{name:/采集岗位/})` 改为 `/^采集岗位/` 锚定开头，chrome.spec 先跑不再引发 strict mode violation；chrome+discovery+safari 连跑 11/11 通过。
+- 隔离服务 curl 实测：extract 未配置模型 → 400 中文；ask 无效会话 → 409 中文。真实模型下的提炼质量与追问连贯性需配置百炼后当面验证（Langfuse 中查看 memory-extract / resume-ask 两条新 trace）。
