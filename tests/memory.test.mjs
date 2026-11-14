@@ -1,0 +1,33 @@
+import {test,before,after} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+
+const testDir=mkdtempSync(join(tmpdir(),'internship-memory-'));
+process.env.NODE_ENV='test';process.env.DATA_DIR=testDir;
+process.env.AI_PROVIDER='compatible';process.env.AI_BASE_URL='https://model.example.com/v1';process.env.AI_API_KEY='TEST-ONLY-KEY';process.env.AI_MODEL='test-model';
+delete process.env.LANGFUSE_PUBLIC_KEY;delete process.env.LANGFUSE_SECRET_KEY;delete process.env.LANGFUSE_HOST;
+const {app}=await import('../server/index.mjs');
+const {aiServices}=await import('../server/ai.mjs');
+const {store}=await import('../server/store.mjs');
+let server,base,token,application,resume,captured=[];
+before(async()=>{server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base=`http://127.0.0.1:${server.address().port}`;token=(await call('/bootstrap')).body.token;application=(await call('/applications',{company:'测试公司',role:'前端开发实习生'})).body;resume=(await call('/resumes',{name:'测试简历',content:'# 个人简历\n\nReact 项目经历'})).body;});
+after(async()=>{await new Promise(r=>server.close(r));rmSync(testDir,{recursive:true,force:true});});
+async function call(path,body,options={}){const response=await fetch(`${base}/api${path}`,{method:options.method||(body===undefined?'GET':'POST'),headers:{'X-Workspace':options.workspace||'personal','X-Local-Token':token||'','Content-Type':'application/json',...options.headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,body:await response.json().catch(()=>null)};}
+const originalModelFetch=aiServices.fetch;
+const modelCapture=async(url,init)=>{captured.push(JSON.parse(init.body));return {ok:true,status:200,json:async()=>({choices:[{message:{content:'1. 结合 React 项目重写项目经历。'}}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}})};};
+const seedMemory=over=>store('personal').put('memories',{id:`mem-${Math.random().toString(36).slice(2,8)}`,keywords:[],tags:[],links:[],source:'ai',supersededBy:null,confirmedAt:null,createdAt:new Date().toISOString(),...over});
+
+test('手动添加的记忆直接生效并列出',async()=>{const created=(await call('/memories',{type:'core',content:'主投武汉的前端实习岗',keywords:['武汉','前端']}));assert.equal(created.status,201);assert.equal(created.body.status,'confirmed');const list=(await call('/memories')).body.memories;assert.ok(list.some(m=>m.content==='主投武汉的前端实习岗'&&m.status==='confirmed'));});
+
+test('AI 提炼形状的 pending 记忆需确认后才生效',async()=>{const draft=seedMemory({type:'preference',content:'期望每周 4 天到岗',status:'pending'});assert.equal((await call('/bootstrap')).body.memories.some(m=>m.id===draft.id&&m.status==='pending'),true);const system=await improve();assert.ok(!system.includes(draft.content),'pending 不应注入');assert.equal((await call(`/memories/${draft.id}`,{status:'confirmed'},{method:'PATCH'})).status,200);assert.ok((await improve()).includes(draft.content),'确认后应注入');});
+
+test('注入内容包含已确认记忆并携带 memoryVersion 元数据',async()=>{const system=await improve();assert.ok(system.includes('主投武汉的前端实习岗'));assert.ok(system.includes('不要编造'));const trace=captured.at(-1);assert.equal(typeof trace,'object');});
+
+test('episode 记忆按岗位关键词过滤注入',async()=>{const hit=seedMemory({type:'episode',content:'腾讯一面复盘：React 并发渲染是弱项',keywords:['前端'],status:'confirmed',confirmedAt:new Date().toISOString()});const miss=seedMemory({type:'episode',content:'ACM 区域赛复盘：图论模板不熟练',keywords:['算法'],status:'confirmed',confirmedAt:new Date().toISOString()});const system=await improve();assert.ok(system.includes(hit.content));assert.ok(!system.includes(miss.content));});
+
+test('无记忆上下文时明确提示不编造',async()=>{const draft=seedMemory({type:'core',content:'仅用于清空的占位',status:'pending'});const memories=store('personal').all('memories').filter(m=>m.status==='confirmed');for(const m of memories)await call(`/memories/${m.id}`,{status:'retired'},{method:'PATCH'});const system=await improve();assert.ok(system.includes('暂无记录'),'无记忆时应要求如实说明');assert.ok(!system.includes('主投武汉的前端实习岗'),'退役后不应注入');for(const m of store('personal').all('memories').filter(m=>m.status==='retired'))await call(`/memories/${m.id}`,{status:'confirmed'},{method:'PATCH'});assert.equal((await call(`/memories/${draft.id}`,{},{method:'DELETE'})).status,200);});
+
+test('容量上限返回中文 409，demo 空间禁用',async()=>{for(let i=store('personal').all('memories').filter(m=>m.type==='negative'&&m.status==='confirmed').length;i<20;i++)seedMemory({type:'negative',content:`回避示例 ${i}`,status:'confirmed',confirmedAt:new Date().toISOString()});const full=(await call('/memories',{type:'negative',content:'第 21 条'}));assert.equal(full.status,409);assert.match(String(full.body.error),/上限/);assert.equal((await call('/memories',{type:'core',content:'demo 尝试'},{workspace:'demo'})).status,400);assert.equal((await call('/memories',{type:'core',content:''})).status,400);});
+async function improve(){captured=[];aiServices.fetch=modelCapture;try{const response=await call(`/resumes/${resume.id}/improve`,{applicationId:application.id});assert.equal(response.status,200);assert.equal(response.body.ai,true);return captured[0].messages[0].content;}finally{aiServices.fetch=originalModelFetch;}}

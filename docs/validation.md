@@ -90,3 +90,14 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - 新增 tests/observability.test.mjs 4 项：未配置时零行为且不建客户端；注入假客户端断言 trace 元数据与用量数值；上报抛错不影响模型返回；真实 SDK 指向本地捕获 HTTP 服务完成端到端上报（断言 Basic 认证头、batch 含 trace-create/generation-create、模型名与用量）。后端合计 93/93（89+4）通过；密钥扫描通过；前端未改动，无需重建 dist。
 - 选择说明：Langfuse v4 已将 /api/public/ingestion 列为遗留端点；官方 v3 SDK 为其持续兼容的客户端路径，且接入集中在 ai.mjs 单处，日后可低成本迁移到 @langfuse/otel。未自写上报协议，避免随版本漂移。
 - 未验证与限制：未用真实 Langfuse 云账号端到端验证（需用户注册并配置 keys 重启后，在控制台核对 resume-improve 等三条 trace）；模型调用失败（HTTP 非 200/网络异常）不产生 trace；成本换算依赖 Langfuse 内置模型单价表，自定义模型名可能显示为 0 成本；简历正文与岗位描述会随 prompt 上传至 Langfuse 云端，为用户知情选择的云版方案；沙箱安装依赖时曾临时改写 node_modules/.modules.yaml 的 store 路径记录并已还原为 Mac 原值。
+
+## 2026-11-14 记忆功能第一期（长期记忆 + 注入）
+
+- 按 `docs/memory-design.md` 第一期实施。新增 `server/memory.mjs`：`memories` 存储（core/preference/episode/negative 四类），`GET/POST/PATCH/DELETE /api/memories`，手动添加直接 confirmed，容量上限（20/20/20/100）超限返回 409 中文提示，demo 空间拒绝写入；PATCH 支持确认/退役/编辑，DELETE 硬删除。`/api/bootstrap` 新增 `memories` 字段。
+- 注入：`buildMemoryBlock` 把已确认记忆拼为 system prompt 附录——core/preference/negative 全量（个人数据量小，无向量库），episode 按岗位关键词双向子串匹配取最近 5 条；块尾固定"没有记录要如实说明、冲突以记忆为准"的弃答指令；无任何记忆时 system prompt 追加"如实说明暂无记录，不要编造"。仅接入 `resume-improve`；`memoryVersion`（条数+最近确认时间）随 trace metadata 上报 Langfuse。
+- 前端：设置页新增"关于我的记忆"卡片（src/pages/Mail.tsx）：手动添加表单、待确认区（记住/丢弃）、四类已生效区（过时了/删除），demo 空间提示；类型/数据定义在 `src/types.ts`，样式追加至 `src/styles.css`。
+- 测试：新增 `tests/memory.test.mjs` 6 项（手动添加生效、pending 确认后才注入、注入内容与弃答文案、episode 关键词过滤、退役后不注入且无记忆时提示暂无记录、容量上限 409 与 demo 拒绝）。后端合计 100/100（94+6）通过；tsc 类型检查通过；密钥扫描通过。
+- 构建：前端有改动，沙箱副本构建成功并已同步 dist（新 bundle `index-BOxeqm7B.js`/`index-CKRQyTlY.css`）。
+- 浏览器流程（沙箱 Chromium，按历史分组方式）：app 5、resumes 3、builder 2、discovery 4、safari 3、chrome 4、mobile 2 通过，合计 23 条；Vision OCR 用例仍因沙箱无 swiftc 失败（环境限制，同前记录）。
+- 发现一个既有测试顺序依赖（非本次引入）：若 chrome.spec 先于 discovery.spec 连跑，chrome 用例采集留下的岗位池使"采集岗位"计数徽标出现，`getByRole('button',{name:/采集岗位/})` 同时匹配页内 tab 与"查看全部已采集岗位"按钮，触发 Playwright strict mode violation，discovery 3 条与 safari 1 条失败；单独跑或按无 chrome 前置分组均通过。失败选择器位于 Discovery.tsx（本次未改动），记忆功能不产生岗位数据。建议后续将选择器改为精确匹配或用例间清理岗位池。
+- 隔离服务 curl 实测（临时 DATA_DIR，测后清理）：POST /api/memories → 201 confirmed；GET 列表与 bootstrap 均含记忆；PATCH retired 与 DELETE → 200；demo POST → 400 中文提示。真实模型调用下的注入效果未验证（沙箱无真实百炼 key），已由假模型断言 prompt 内容的单测覆盖。
