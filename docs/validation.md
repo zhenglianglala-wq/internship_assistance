@@ -123,3 +123,9 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - 岗位相关性：核查确认偏好过滤链路（matchJob + 上下文预算 + "查看全部已采集岗位"开关）此前已完整存在，用户看到无关岗位的直接原因是个人空间从未设置求职偏好（.data/personal.sqlite 中 preferences 无记录），导致 284 条采集岗位（含 Notion Ashby 全量英文岗与腾讯官网全量岗）全部显示。本次新增：未设置偏好且池内有岗位时，采集岗位页顶部显示引导提示（说明影响与设置入口）；采集岗位 tab 顶部新增"快速采集"可展开卡片，把 BOSS Chrome 关键词采集面板从来源弹窗提升到页面级（表单继续按偏好预填关键词与城市，弹窗打开时主页面板自动隐藏避免双实例）。
 - 对"星图/工作台会否臃肿"的答复已向用户说明：池子留在发现页，仅"收藏并跟踪"创建申请进入工作台与星图，闸门既有。
 - 前端构建并同步 dist（`index-3Hin1WUH.css`/`index-Dj2O8G2K.js`）；浏览器流程 discovery+resumes+app 共 12 条通过；无头 Chromium 截图实际查看采集岗位页（快速采集卡片、demo 提示、偏好面板布局正常）。未真实运行 BOSS Chrome 采集（需专用浏览器登录），快速采集面板的采集行为本身为此前已验证链路的复用。
+
+## 2026-11-16 按 fullstack-gui-testing skill 的深度验收
+
+- 按外部 skill（ln-ccccc/Zhong-s_Skills 的 fullstack-gui-testing）方法执行：全量现有检查取真实退出码（后端 105/105、密钥扫描、tsc、构建均 exit 0）；6 个浏览器 spec 连跑 21/21 通过（含 chrome→discovery 顺序）；新增重启持久化闭环（申请含事件/简历/记忆跨重启重读存活，PERSISTENCE-OK）；简历下载落盘核验（HTTP 200 且首行正确）；重复提交防护核验（API save 按 discoveredJobId/url 查重返回已有记录、GUI 收藏后按钮变"已收藏·查看申请"）；删除简历引用保护 409 断言；截图实际打开判读。
+- 完整报告（检查矩阵 + 已知问题 + 未测项，按 passed/real·fixture 标注）见 `artifacts/acceptance-report.md`（Git 忽略，本机留存）。已知问题如实列入：Vision OCR 沙箱环境限制、否定约束/时序机械计数待人工判读、BOSS 真实采集与真实邮箱未运行（blocked-环境）、大 bundle 警告既有。
+- 结论：仅声明证据支持范围——功能闭环、持久化、防重、失败恢复在隔离环境通过；真实上游（招聘网站、邮箱、视频模型效果）不在本次声明内。
