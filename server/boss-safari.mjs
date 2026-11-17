@@ -28,8 +28,23 @@ export const safariServices={run:appleEvent,wait:ms=>new Promise(r=>setTimeout(r
 export async function readSafariBoss(target){const result=await safariServices.run('read',`JSON.stringify((${readBossPage.toString()})())`,target||activeSearchTarget);const value=schema.parse(result.value);return {...value,target:{windowId:result.windowId,tabIndex:result.tabIndex}};}
 function assertReady(snapshot){const messages={wrong_page:'请将 Safari 切换到 BOSS 直聘岗位列表',login_required:'BOSS 登录已失效，请在 Safari 完成登录',captcha:'BOSS 出现安全验证，请在原页面自行完成后再采集',blocked:'BOSS 暂时限制访问，本次采集已停止',loading:'BOSS 页面仍在加载，请稍后重试',structure_changed:'BOSS 页面结构未能识别，请切换到有岗位列表的页面'};if(snapshot.state!=='ready')throw fail(messages[snapshot.state]||'当前页面没有可采集的岗位');}
 export async function checkSafariBoss(){const snapshot=await readSafariBoss();assertReady(snapshot);return {connected:true,count:snapshot.jobs.length,url:snapshot.url};}
-export async function collectSafariBoss(source){
-  const first=await readSafariBoss();assertReady(first);const byURL=new Map(first.jobs.map(j=>[bossJobURL(j.url),{...j,url:bossJobURL(j.url)}]));
+export const bossManualSafariSource={id:'boss-manual-safari',kind:'boss_safari',name:'BOSS · 当前浏览岗位（Safari）',url:'https://www.zhipin.com/web/geek/jobs'};
+// 采集 Safari 当前浏览的岗位：要求处于列表页且已选中岗位（右侧显示职位描述）。
+export async function collectCurrentSafariBossJob(){
+  const snapshot=await readSafariBoss();
+  if(/\/job_detail\//.test(snapshot.url||''))throw fail('检测到你正在浏览岗位详情页：请回到岗位列表，点击选中该岗位（右侧出现职位描述）后再采集');
+  assertReady(snapshot);
+  const detail=snapshot.detail;
+  if(!detail)throw fail('未找到正在浏览的岗位：请在列表中点击选中一个岗位（右侧出现职位描述）后再采集');
+  const url=bossJobURL(detail.url);
+  const card=snapshot.jobs.find(j=>bossJobURL(j.url)===url);
+  if(!card)throw fail('选中岗位与列表不同步，请重新点击该岗位后再采集');
+  const normalized=normalizeJob({...card,description:detail.description||card.description,salary:detail.salary||card.salary,url},bossManualSafariSource);
+  if(!normalized)throw fail('岗位信息不完整，无法保存');
+  const saved={...card,...normalized,description:detail.description||normalized.description,salary:detail.salary||normalized.salary,fieldWarnings:[...new Set([...(card.fieldWarnings||[]),...(detail.fieldWarnings||[])])],detailStatus:'detail',detailCapturedAt:new Date().toISOString()};
+  return {job:saved,source:bossManualSafariSource,note:`已采集「${saved.company} · ${saved.role}」，进入机会池`};
+}
+export async function collectSafariBoss(source){  const first=await readSafariBoss();assertReady(first);const byURL=new Map(first.jobs.map(j=>[bossJobURL(j.url),{...j,url:bossJobURL(j.url)}]));
   function merge(snapshot){if(snapshot.detail){const key=bossJobURL(snapshot.detail.url);if(byURL.has(key)){const previous=byURL.get(key),salary=snapshot.detail.salary||previous.salary;byURL.set(key,{...previous,...snapshot.detail,url:key,salary,fieldWarnings:[...new Set([...previous.fieldWarnings,...snapshot.detail.fieldWarnings])].filter(w=>!salary||!w.includes('薪资'))})}}}
   merge(first);let detailsRead=0,detailError='';
   for(const job of [...byURL.values()].slice(0,source.detailLimit??5)){
@@ -45,8 +60,9 @@ export async function collectSafariBoss(source){
 }
 export const bossCities={'北京':'101010100','上海':'101020100','广州':'101280100','深圳':'101280600','杭州':'101210100','成都':'101270100','南京':'101190100','武汉':'101200100','西安':'101110100','苏州':'101190400','天津':'101030100','重庆':'101040100'};
 export async function openBossSearch(input){const {keyword,city,internOnly}=z.object({keyword:z.string().trim().min(1).max(100),city:z.enum(Object.keys(bossCities)),internOnly:z.boolean().default(true)}).parse(input);const params=new URLSearchParams({query:keyword,city:bossCities[city]});if(internOnly)params.set('jobType','1902');const url=`https://www.zhipin.com/web/geek/jobs?${params}`;const result=await safariServices.run('open',url);activeSearchTarget=result.windowId&&result.tabIndex?{windowId:result.windowId,tabIndex:result.tabIndex}:null;return {opened:true,url};}
-export function attachBossSafariRoutes(app){
+export function attachBossSafariRoutes(app,{saveSourceResult=()=>{}}={}){
   const real=req=>{if(req.workspace==='demo')throw fail('BOSS 账号连接请切换到「我的空间」',400)};
   app.post('/api/boss-safari/check',async(req,res,next)=>{try{real(req);res.json(await checkSafariBoss())}catch(error){next(error)}});
   app.post('/api/boss-safari/search',async(req,res,next)=>{try{real(req);res.json(await openBossSearch(req.body))}catch(error){next(error)}});
+  app.post('/api/boss-safari/current',async(req,res,next)=>{try{real(req);const result=await collectCurrentSafariBossJob();saveSourceResult(req.db,result.source,{jobs:[result.job],complete:false});res.json({job:result.job,note:result.note})}catch(error){next(error)}});
 }

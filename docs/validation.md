@@ -136,3 +136,10 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - BossChrome 面板（快速采集卡片内）新增"采集当前浏览的岗位"按钮：使用流程=在专用 Chrome 打开/选中岗位 → 点击按钮 → 提示已进入机会池。未登录/页面未就绪/非 BOSS 页面各有中文错误提示。
 - 测试：boss-chrome.test.mjs 10 项（新增单岗位采集：入库/详情状态/去重/demo 拒绝/private 标识不泄漏）。后端合计 109/109；tsc、密钥扫描通过；dist 同步（`index-Dj2O8G2K` 后新哈希）；浏览器 discovery+chrome+app 13 条通过。
 - 未真实验收：单岗位采集需专用 Chrome 登录 BOSS 的真实页面（沙箱无法验证 DOM 选择器与 BOSS 当前结构匹配，已在错误信息中给出替代路径——进入详情页后采集）。列表页选中卡片提取依赖 `[data-securityid]`/`.job-card-wrapper.is-active` 选择器，若 BOSS 改版导致失败，提示文案会引导用户走详情页路径。
+
+## 2026-11-17 Safari 单岗位采集与用户视角走查
+
+- Safari 路径补齐"采集当前浏览的岗位"（`POST /api/boss-safari/current`，BossSafari 面板新增按钮）：读取 Safari 当前 BOSS 列表页中**选中的岗位**（右侧出现职位描述），合并列表字段与详情正文后入库；已在池中走 unchanged 去重；正在浏览岗位详情页（job_detail）时返回中文引导提示，改回列表选中后再采集。与 Chrome 版共用 boss-manual 概念但来源相互独立（kind boss_safari）。
+- 用户视角走查发现并修复 2 个缺陷：①Safari 单岗位采集最初直接保存 readSafariBoss 的快照对象（无 id 字段），导致 SQLite 绑定失败——已改为走 normalizeJob 正规管线生成稳定 id；②单岗位采集路由使用 complete:true 完整快照语义，会使此前单岗位采集的其他岗位被误标 missing——Chrome/Safari 两个路由均改为 complete:false 部分快照（与自动采集"不据此标记旧岗位下架"一致），并补回归测试锁定（两次采集互不影响、详情保留）。另修复 BossSafari 组件缺 reload 解构导致的类型错误。
+- 测试：boss-safari 7/7（新增 1 项：选中岗位采集、详情页拒绝、未选中提示、demo 拒绝）、boss-chrome 11/11（新增重复单岗位采集互不影响）；后端合计 111/111；tsc、密钥扫描通过；dist 同步（`index-3Hin1WUH` 后新哈希）；浏览器 discovery+chrome+safari+app 16 条通过。
+- 未真实验收：Chrome/Safari 单岗位采集的页面提取依赖 BOSS 当前 DOM/URL 结构，真实登录页面上的一次实采仍需用户当面验证；失败路径均有中文引导（Chrome 引导进详情页，Safari 引导回列表选中）。

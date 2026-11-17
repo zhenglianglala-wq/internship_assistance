@@ -43,3 +43,14 @@ test('Safari sources are excluded from scheduled collection and search destinati
 test('list refresh retains an earlier detail and its capture time',async()=>{
  safariServices.run=async()=>snapshot();const partial=await collectSafariBoss({...source,detailLimit:0});const before=store('personal').get('discoveredJobs',partial.jobs[0].id);assert.equal(before.detailStatus,'detail');saveSourceResult(store('personal'),source,partial);const after=store('personal').get('discoveredJobs',partial.jobs[0].id);assert.equal(after.description,before.description);assert.equal(after.detailStatus,'detail');assert.equal(after.browserEvidence.detailCapturedAt,before.browserEvidence.detailCapturedAt);
 });
+
+test('Safari current-job capture saves the selected job and rejects detail pages',async()=>{
+  let showDetail=true;
+  safariServices.run=async()=>{const s=snapshot();if(showDetail)s.value.detail={url:'https://www.zhipin.com/job_detail/one.html',description:'每周3天，React 项目开发。',salary:'',fieldWarnings:[],detailStatus:'detail'};return s;};
+  const r=await call('/boss-safari/current',{});assert.equal(r.status,200);assert.match(r.body.note,/前端开发实习生/);
+  const saved=store('personal').all('discoveredJobs').find(j=>j.externalId==='one'&&j.detailStatus==='detail');assert(saved);assert.match(saved.description,/每周3天/);assert.equal(saved.salary,'');
+  safariServices.run=async()=>{const s=snapshot();s.value.url='https://www.zhipin.com/job_detail/one.html';s.value.detail={url:'https://www.zhipin.com/job_detail/one.html',description:'x',salary:'',fieldWarnings:[],detailStatus:'detail'};s.value.jobs=[];return s;};
+  const reject=await call('/boss-safari/current',{});assert.equal(reject.status,409);assert.match(String(reject.body.error),/回到岗位列表/);
+  showDetail=false;safariServices.run=async()=>{const s=snapshot();return s;};const none=await call('/boss-safari/current',{});assert.equal(none.status,409);assert.match(String(none.body.error),/未找到正在浏览的岗位/);
+  assert.equal((await call('/boss-safari/current',{},'POST','demo')).status,400);
+});
