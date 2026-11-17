@@ -143,3 +143,13 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - 用户视角走查发现并修复 2 个缺陷：①Safari 单岗位采集最初直接保存 readSafariBoss 的快照对象（无 id 字段），导致 SQLite 绑定失败——已改为走 normalizeJob 正规管线生成稳定 id；②单岗位采集路由使用 complete:true 完整快照语义，会使此前单岗位采集的其他岗位被误标 missing——Chrome/Safari 两个路由均改为 complete:false 部分快照（与自动采集"不据此标记旧岗位下架"一致），并补回归测试锁定（两次采集互不影响、详情保留）。另修复 BossSafari 组件缺 reload 解构导致的类型错误。
 - 测试：boss-safari 7/7（新增 1 项：选中岗位采集、详情页拒绝、未选中提示、demo 拒绝）、boss-chrome 11/11（新增重复单岗位采集互不影响）；后端合计 111/111；tsc、密钥扫描通过；dist 同步（`index-3Hin1WUH` 后新哈希）；浏览器 discovery+chrome+safari+app 16 条通过。
 - 未真实验收：Chrome/Safari 单岗位采集的页面提取依赖 BOSS 当前 DOM/URL 结构，真实登录页面上的一次实采仍需用户当面验证；失败路径均有中文引导（Chrome 引导进详情页，Safari 引导回列表选中）。
+
+## 2026-11-17 外部审查 F1-F10 修复（review @e49c471）
+
+- 依据外部审查报告（artifacts/audit-20261117/，复现脚本先行）逐项修复并补回归。
+- F1(P1) 侧栏串用：ApplicationDetail/DiscoveryDetail 按对象 id 加 key，切换对象即重建，局部编辑与删除确认不再串用。F2 草稿丢弃闭环：DELETE /api/drafts/:id（仅 draft 状态，删除时作废对应确认令牌），投递页草稿加"丢弃草稿"按钮+确认弹窗；申请删除死锁解除。F3 简历未保存丢失：编辑器上报 dirty，切换版本时拦截弹窗（放弃并切换/留在当前页先保存）。
+- F4 BOSS 详情合并补推断字段（出勤/时长/类型从详情正文重新推断，缺失保留列表值）。F5 官网 JSON-LD 与 Lever 的结构化类型完整映射（fulltime/parttime/contract/intern）。F6 机会池统计按薪资单位分组（日薪/月薪分开算中位），偶数中位取中间两项均值。
+- F7 OAuth 刷新与连接测试写回前重读账号存在性，已删除账号不再复活（含凭据）。F8 删除简历阻断未处理的迁移准备记录（409 中文提示），并新增迁移记录丢弃 API（仅 prepared 状态）。F9 申请创建/发送的状态派生统一（未通过/已撤回=closed，发送不再复活 closed）。F10 关闭申请清空未来面试时间，"接下来"日程过滤 closed。
+- 复现脚本复查：draft-deletion-deadlock 解除（删草稿 200→删申请 200）、closed-created-active→closed、remains-upcoming→interviewAt=null 且 overview 不显示、send-reopens→400 不复活。
+- 回归：新增草稿丢弃/撤回保护/岗位回池等用例（server.test 13、collection 22、boss-chrome 11、boss-safari 7、memory 10、observability 5、其余不变），后端合计 111/111；tsc、密钥扫描通过；dist 同步；浏览器 app/resumes/discovery/mail 12 条通过。
+- F1/F3 的 GUI 行为以人工复现路径核对（切对象重建、弹窗拦截），未新增自动化用例。审查产物保留于 artifacts/audit-20261117/。

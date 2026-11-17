@@ -26,7 +26,7 @@ export async function accountAuth(account,s) {
     const response=await fetch(google?'https://oauth2.googleapis.com/token':'https://login.microsoftonline.com/common/oauth2/v2.0/token',{method:'POST',body:params,signal:AbortSignal.timeout(15000)});
     const tokens=await response.json(); if(!response.ok) throw new Error('邮箱授权已过期，请重新授权');
     secret.accessToken=tokens.access_token;secret.refreshToken=tokens.refresh_token||secret.refreshToken;secret.expiresAt=Date.now()+tokens.expires_in*1000;
-    account.secret=encrypt(secret);s.put('accounts',account);
+    const fresh=s.get('accounts',account.id);if(fresh)fresh.secret=encrypt(secret),s.put('accounts',fresh);
   }
   return secret.accessToken ? {user:account.email,accessToken:secret.accessToken} : {user:account.email,pass:secret.password};
 }
