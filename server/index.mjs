@@ -101,7 +101,7 @@ app.get('/api/oauth/:provider/callback',asyncRoute(async(req,res)=>{const state=
 
 attachCollectionRoutes(app);
 attachBossSafariRoutes(app);
-attachBossChromeRoutes(app);
+attachBossChromeRoutes(app,{saveSourceResult});
 attachMobileRoutes(app,{saveSourceResult});
 attachAiRoutes(app);
 attachMemoryRoutes(app);

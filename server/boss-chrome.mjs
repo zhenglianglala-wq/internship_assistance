@@ -38,9 +38,29 @@ export async function collectChromeBoss(source,{onPage}={}){
  finally{unlisten?.();client?.close();occupied=false}
  function result(extra){return {jobs:[...jobs.values()].map(({detailCapturedAt,...j})=>({...j,browserEvidence:{browser:'Chrome',page:searchURL(o),capturedAt:new Date().toISOString(),...(detailCapturedAt?{detailCapturedAt}:{})}})),complete:false,note:`Chrome 读取 ${pagesRead} 批列表、${jobs.size} 个岗位，补充 ${detailsRead} 个详情。${extra||''}搜索结果为部分快照，不据此标记旧岗位下架。`}}
 }
-export function attachBossChromeRoutes(app){const real=req=>{if(req.workspace==='demo')throw fail('BOSS 账号连接请切换到「我的空间」',400)};
+export const bossManualSource={id:'boss-manual',kind:'boss_chrome',name:'BOSS · 当前浏览岗位',url:'https://www.zhipin.com/web/geek/jobs'};
+// 采集用户当前在专用 Chrome 里浏览的单个岗位：详情页 URL 自带 securityId，列表页尝试读取选中卡片。
+export async function collectCurrentBossJob(){
+  if(occupied)throw fail('Chrome 正在处理另一项 BOSS 操作');occupied=true;let client;
+  try{({client}=await chromeServices.target());
+    const page=await evaluate(client,`(()=>{const url=location.href;if(!/^https:\\/\\/((www\\.)?zhipin\\.com)\\//.test(url))return {code:-3};const q=new URLSearchParams(url.split('?')[1]||'');const detail=url.match(/job_detail\\/([\\w-]+)\\.html/);if(detail&&q.get('securityId'))return {code:0,encryptId:detail[1],securityId:q.get('securityId'),lid:q.get('lid')||'',brand:(document.querySelector('.company-info .name,.sider-company .name,.company .name')?.textContent||'').trim().slice(0,100)};const card=document.querySelector('.job-card-wrapper.is-active,[data-securityid]');const sid=card?.getAttribute('data-securityid')||card?.getAttribute('data-securityId')||'';if(sid)return {code:0,encryptId:detail?.[1]||'',securityId:sid,lid:q.get('lid')||'',brand:(card?.querySelector('.company-name,.company-info')?.textContent||'').trim().slice(0,100)};return {code:-2}})()`);
+    if(page?.code===-3)throw fail('当前标签页不是 BOSS 直聘页面，请在专用 Chrome 里打开职位页');
+    if(page?.code!==0)throw fail('未找到选中岗位的详情标识：请点击岗位名称进入职位详情页（地址栏出现 job_detail）后再采集');
+    const d=await fetchDetail(client,{securityId:page.securityId,lid:page.lid});
+    if(d?.code!==0)throw fail('岗位详情返回登录或访问限制，请在浏览器核对');
+    if(!d.job?.postDescription)throw fail('此岗位未返回详情正文，暂不能采集');
+    const brand=page.brand||d.job.brandNameCom||'';
+    if(!brand)throw fail('未能读取公司名称，请在职位详情页核对后再采集');
+    const base=mapChromeJob({encryptJobId:page.encryptId||d.job.encryptJobId||'',jobName:d.job.jobName,brandName:brand,cityName:'',salaryDesc:d.job.salaryDesc||'',description:d.job.postDescription},bossManualSource);
+    if(!base)throw fail('岗位信息不完整，请在详情页核对后再采集');
+    const saved={...base,description:d.job.postDescription,salary:d.job.salaryDesc||base.salary,detailStatus:'detail',detailCapturedAt:new Date().toISOString()};
+    return {job:saved,source:bossManualSource,note:`已采集「${saved.company} · ${saved.role}」，进入机会池`};
+  }finally{client?.close();occupied=false}
+}
+export function attachBossChromeRoutes(app,{saveSourceResult=()=>{}}={}){const real=req=>{if(req.workspace==='demo')throw fail('BOSS 账号连接请切换到「我的空间」',400)};
  app.get('/api/boss-chrome/status',(req,res)=>res.json({progress}));
  app.post('/api/boss-chrome/open',async(req,res,next)=>{let client,locked=false;try{real(req);if(occupied)throw fail('请等待当前 Chrome 采集结束');const o=chromeOptions.parse(req.body);occupied=true;locked=true;({client}=await chromeServices.target({launch:true}));await client.send('Page.navigate',{url:searchURL(o)});await client.send('Page.bringToFront');res.json({opened:true,url:searchURL(o)})}catch(e){next(e)}finally{client?.close();if(locked)occupied=false}});
  app.post('/api/boss-chrome/check',async(req,res,next)=>{let client,locked=false;try{real(req);if(occupied)throw fail('Chrome 正在采集，请查看进度');occupied=true;locked=true;({client}=await chromeServices.target());const s=await guard(client);if(s.state!=='ready')throw fail('浏览器已连接，岗位列表尚未就绪；请等待页面加载，并停留在能看到岗位卡片的职位列表页');res.json({connected:true,count:s.jobs?.length||0,url:s.url})}catch(e){next(e)}finally{client?.close();if(locked)occupied=false}});
  app.post('/api/boss-chrome/stop',(req,res,next)=>{try{real(req);if(progress?.status==='running'){stopRequested=true;progress={...progress,phase:'正在停止，保留已有结果'}}res.json({stopping:stopRequested})}catch(e){next(e)}});
+ app.post('/api/boss-chrome/current',async(req,res,next)=>{try{real(req);const result=await collectCurrentBossJob();saveSourceResult(req.db,result.source,{jobs:[result.job],complete:true});res.json({job:result.job,note:result.note})}catch(e){next(e)}});
 }

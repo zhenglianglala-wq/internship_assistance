@@ -129,3 +129,10 @@ QQ / 163 / Gmail / Outlook / 学校邮箱的实际登录、真实网络收信、
 - 按外部 skill（ln-ccccc/Zhong-s_Skills 的 fullstack-gui-testing）方法执行：全量现有检查取真实退出码（后端 105/105、密钥扫描、tsc、构建均 exit 0）；6 个浏览器 spec 连跑 21/21 通过（含 chrome→discovery 顺序）；新增重启持久化闭环（申请含事件/简历/记忆跨重启重读存活，PERSISTENCE-OK）；简历下载落盘核验（HTTP 200 且首行正确）；重复提交防护核验（API save 按 discoveredJobId/url 查重返回已有记录、GUI 收藏后按钮变"已收藏·查看申请"）；删除简历引用保护 409 断言；截图实际打开判读。
 - 完整报告（检查矩阵 + 已知问题 + 未测项，按 passed/real·fixture 标注）见 `artifacts/acceptance-report.md`（Git 忽略，本机留存）。已知问题如实列入：Vision OCR 沙箱环境限制、否定约束/时序机械计数待人工判读、BOSS 真实采集与真实邮箱未运行（blocked-环境）、大 bundle 警告既有。
 - 结论：仅声明证据支持范围——功能闭环、持久化、防重、失败恢复在隔离环境通过；真实上游（招聘网站、邮箱、视频模型效果）不在本次声明内。
+
+## 2026-11-17 单岗位快速采集（BOSS 当前浏览）
+
+- 新增 `POST /api/boss-chrome/current`：连接专用 Chrome 的 BOSS 标签页，读取用户**当前浏览**的岗位——详情页（URL 含 job_detail+securityId）直接取标识，列表页尝试读取选中卡片的 securityId（DOM 选择器可能随 BOSS 改版失效，失败时明确提示改为进入详情页后采集）；页面上下文内调用 BOSS 详情接口补全正文，字段白名单归一化后经 saveSourceResult 去重入库（详情状态+浏览器证据）；已在池中的岗位二次采集走既有 unchanged 去重。demo 拒绝；与自动采集共用 occupied 互斥。
+- BossChrome 面板（快速采集卡片内）新增"采集当前浏览的岗位"按钮：使用流程=在专用 Chrome 打开/选中岗位 → 点击按钮 → 提示已进入机会池。未登录/页面未就绪/非 BOSS 页面各有中文错误提示。
+- 测试：boss-chrome.test.mjs 10 项（新增单岗位采集：入库/详情状态/去重/demo 拒绝/private 标识不泄漏）。后端合计 109/109；tsc、密钥扫描通过；dist 同步（`index-Dj2O8G2K` 后新哈希）；浏览器 discovery+chrome+app 13 条通过。
+- 未真实验收：单岗位采集需专用 Chrome 登录 BOSS 的真实页面（沙箱无法验证 DOM 选择器与 BOSS 当前结构匹配，已在错误信息中给出替代路径——进入详情页后采集）。列表页选中卡片提取依赖 `[data-securityid]`/`.job-card-wrapper.is-active` 选择器，若 BOSS 改版导致失败，提示文案会引导用户走详情页路径。
